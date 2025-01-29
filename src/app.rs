@@ -21,6 +21,7 @@ pub struct TemplateApp {
     wgpu_callback: WgpuCallback,
 }
 
+#[allow(dead_code)]
 fn convert_u8_to_u32(input: &[u8]) -> Vec<u32> {
     // 确保输入长度是 4 的倍数
     assert!(input.len() % 4 == 0, "Input length must be a multiple of 4");

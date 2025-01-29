@@ -18,13 +18,12 @@ fn convert_shader(
 
     // Validate the module
     let mut validator = Validator::new(ValidationFlags::all(), Capabilities::all());
-    let info = validator.validate(&module)?;
-    let info = validator.validate(&module)?;
+    let _info = validator.validate(&module)?;
 
     // Convert to WGSL
     let wgsl = naga::back::wgsl::write_string(
         &module,
-        &info,
+        &_info,
         naga::back::wgsl::WriterFlags::empty(),
     )?;
 
