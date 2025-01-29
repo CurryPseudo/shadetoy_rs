@@ -2,6 +2,7 @@ use naga::valid::{Capabilities, ValidationFlags, Validator};
 
 use eframe::egui;
 use eframe::egui_wgpu;
+use eframe::egui_wgpu::RenderState;
 use eframe::epaint::PaintCallbackInfo;
 use eframe::wgpu::util::DeviceExt;
 use egui::panel::Side;
@@ -9,13 +10,23 @@ use egui::Id;
 use egui_wgpu::wgpu;
 use egui_wgpu::wgpu::{CommandBuffer, CommandEncoder, Device, Queue, RenderPass};
 use egui_wgpu::{CallbackResources, ScreenDescriptor};
+#[cfg(not(target_arch = "wasm32"))]
+use notify::Watcher;
+use std::borrow::Cow;
+use std::path::Path;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(serde::Deserialize, serde::Serialize, Default)]
-#[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
-    #[serde(skip)]
     wgpu_callback: WgpuCallback,
+    render_state: RenderState,
+    #[cfg(not(target_arch = "wasm32"))]
+    _vertex_shader_file_watcher: notify::RecommendedWatcher,
+    #[cfg(not(target_arch = "wasm32"))]
+    vertex_shader_file_watch_rx: std::sync::mpsc::Receiver<notify::Result<notify::Event>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    _fragment_shader_file_watcher: notify::RecommendedWatcher,
+    #[cfg(not(target_arch = "wasm32"))]
+    fragment_shader_file_watch_rx: std::sync::mpsc::Receiver<notify::Result<notify::Event>>,
 }
 
 fn convert_shader(
@@ -41,72 +52,107 @@ fn convert_shader(
 
     Ok(wgsl)
 }
+fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("bind_group_layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    })
+}
+fn load_vertex_shader() -> Cow<'static, str> {
+    if cfg!(target_arch = "wasm32") {
+        convert_shader(include_str!("shader.vert"), naga::ShaderStage::Vertex)
+            .unwrap()
+            .into()
+    } else {
+        convert_shader(
+            &std::fs::read_to_string(&Path::new("src/shader.vert")).unwrap(),
+            naga::ShaderStage::Vertex,
+        )
+        .unwrap()
+        .into()
+    }
+}
+fn load_fragment_shader() -> Cow<'static, str> {
+    if cfg!(target_arch = "wasm32") {
+        convert_shader(include_str!("shader.frag"), naga::ShaderStage::Fragment)
+            .unwrap()
+            .into()
+    } else {
+        convert_shader(
+            &std::fs::read_to_string(&Path::new("src/shader.frag")).unwrap(),
+            naga::ShaderStage::Fragment,
+        )
+        .unwrap()
+        .into()
+    }
+}
+fn create_pipeline(
+    device: &wgpu::Device,
+    vertex_wgsl: Cow<'_, str>,
+    fragment_wgsl: Cow<'_, str>,
+    target_format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let bind_group_layout = create_bind_group_layout(device);
+    let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("vertex_shader"),
+        source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
+    });
+    let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("fragment_shader"),
+        // convert u8 to u32
+        source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
+    });
+
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("pipeline_layout"),
+        bind_group_layouts: &[&bind_group_layout],
+        push_constant_ranges: &[],
+    });
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("render_pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &vertex_shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &fragment_shader,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            targets: &[Some(target_format.into())],
+        }),
+        multiview: None,
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        cache: None,
+    })
+}
 impl TemplateApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let wgpu_render_state = cc.wgpu_render_state.as_ref().expect("WGPU enabled");
+        let render_state = cc.wgpu_render_state.as_ref().expect("WGPU enabled");
 
-        let device = wgpu_render_state.device.as_ref();
-        let vertex_wgsl =
-            convert_shader(include_str!("shader.vert"), naga::ShaderStage::Vertex).unwrap();
-        let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("vertex_shader"),
-            source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
-        });
-        let fragment_wgsl =
-            convert_shader(include_str!("shader.frag"), naga::ShaderStage::Fragment).unwrap();
-        let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("fragment_shader"),
-            // convert u8 to u32
-            source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
-        });
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("render_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &vertex_shader,
-                entry_point: Some("main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &fragment_shader,
-                entry_point: Some("main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu_render_state.target_format.into())],
-            }),
-            multiview: None,
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            cache: None,
-        });
+        let device = render_state.device.as_ref();
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&[0.0]),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
         });
+        let bind_group_layout = create_bind_group_layout(device);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &bind_group_layout,
@@ -115,34 +161,67 @@ impl TemplateApp {
                 resource: uniform_buffer.as_entire_binding(),
             }],
         });
-
-        // Because the graphics pipeline must have the same lifetime as the egui render pass,
-        // instead of storing the pipeline in our `Custom3D` struct, we insert it into the
-        // `paint_callback_resources` type map, which is stored alongside the render pass.
-        wgpu_render_state
+        render_state
             .renderer
             .write()
             .callback_resources
             .insert(TriangleRenderResources {
-                pipeline,
+                pipeline: None,
                 bind_group,
                 uniform_buffer,
             });
-        // This is also where you can customize the look and feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
-        // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
-        if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut vertex_shader_file_watcher;
+            let vertex_shader_file_watch_rx;
+            {
+                let (tx, rx) = std::sync::mpsc::channel();
+                vertex_shader_file_watcher =
+                    notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
+                vertex_shader_file_watcher
+                    .watch(
+                        Path::new("src/shader.vert"),
+                        notify::RecursiveMode::NonRecursive,
+                    )
+                    .unwrap();
+                vertex_shader_file_watch_rx = rx;
+            }
+            let mut fragment_shader_file_watcher;
+            let fragment_shader_file_watch_rx;
+            {
+                let (tx, rx) = std::sync::mpsc::channel();
+                fragment_shader_file_watcher =
+                    notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
+                fragment_shader_file_watcher
+                    .watch(
+                        Path::new("src/shader.frag"),
+                        notify::RecursiveMode::NonRecursive,
+                    )
+                    .unwrap();
+                fragment_shader_file_watch_rx = rx;
+            }
+            Self {
+                wgpu_callback: WgpuCallback::default(),
+                render_state: render_state.clone(),
+                _vertex_shader_file_watcher: vertex_shader_file_watcher,
+                vertex_shader_file_watch_rx,
+                _fragment_shader_file_watcher: fragment_shader_file_watcher,
+                fragment_shader_file_watch_rx,
+            }
         }
-
-        Default::default()
+        #[cfg(target_arch = "wasm32")]
+        {
+            Self {
+                wgpu_callback: WgpuCallback::default(),
+                render_state: render_state.clone(),
+            }
+        }
     }
 }
 
 struct TriangleRenderResources {
-    pipeline: wgpu::RenderPipeline,
+    pipeline: Option<wgpu::RenderPipeline>,
     bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
 }
@@ -150,6 +229,7 @@ struct TriangleRenderResources {
 struct WgpuCallback {
     angle: f32,
 }
+
 impl egui_wgpu::CallbackTrait for WgpuCallback {
     fn prepare(
         &self,
@@ -185,20 +265,51 @@ impl egui_wgpu::CallbackTrait for WgpuCallback {
         callback_resources: &CallbackResources,
     ) {
         let resources: &TriangleRenderResources = callback_resources.get().unwrap();
-        render_pass.set_pipeline(&resources.pipeline);
-        render_pass.set_bind_group(0, &resources.bind_group, &[]);
-        render_pass.draw(0..3, 0..1);
+        if let Some(pipeline) = &resources.pipeline {
+            render_pass.set_pipeline(&pipeline);
+            render_pass.set_bind_group(0, &resources.bind_group, &[]);
+            render_pass.draw(0..3, 0..1);
+        }
     }
 }
 
 impl eframe::App for TemplateApp {
-    /// Called by the frame work to save state before shutdown.
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, eframe::APP_KEY, self);
-    }
-
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        {
+            let mut renderer = self.render_state.renderer.write();
+
+            let triangle_render_resources = renderer
+                .callback_resources
+                .get_mut::<TriangleRenderResources>()
+                .unwrap();
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                while let Ok(Ok(notify::Event {
+                    kind: notify::EventKind::Modify(_),
+                    ..
+                })) = self.vertex_shader_file_watch_rx.try_recv()
+                {
+                    triangle_render_resources.pipeline = None;
+                }
+
+                while let Ok(Ok(notify::Event {
+                    kind: notify::EventKind::Modify(_),
+                    ..
+                })) = self.fragment_shader_file_watch_rx.try_recv()
+                {
+                    triangle_render_resources.pipeline = None;
+                }
+            }
+            if triangle_render_resources.pipeline.is_none() {
+                triangle_render_resources.pipeline = Some(create_pipeline(
+                    &self.render_state.device,
+                    load_vertex_shader(),
+                    load_fragment_shader(),
+                    self.render_state.target_format,
+                ));
+            }
+        }
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
 
@@ -236,4 +347,7 @@ impl eframe::App for TemplateApp {
             ));
         });
     }
+
+    /// Called by the frame work to save state before shutdown.
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {}
 }
