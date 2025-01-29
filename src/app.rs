@@ -1,3 +1,8 @@
+// Note: The GLSL shaders (shader.vert and shader.frag) must be compiled to SPIR-V before use.
+// Use glslangValidator or a similar tool to compile them:
+// glslangValidator -V shader.vert -o shader.vert.spv
+// glslangValidator -V shader.frag -o shader.frag.spv
+
 use eframe::egui;
 use eframe::egui_wgpu;
 use eframe::epaint::PaintCallbackInfo;
@@ -17,6 +22,23 @@ pub struct TemplateApp {
 }
 
 
+fn convert_u8_to_u32(input: &[u8]) -> Vec<u32> {
+    // 确保输入长度是 4 的倍数
+    assert!(input.len() % 4 == 0, "Input length must be a multiple of 4");
+
+    // 使用迭代器进行转换
+    (0..input.len() / 4)
+        .map(|i| {
+            // 将每四个 u8 转换为一个 u32
+            u32::from_le_bytes([
+                input[i * 4],
+                input[i * 4 + 1],
+                input[i * 4 + 2],
+                input[i * 4 + 3],
+            ])
+        })
+        .collect()
+}
 impl TemplateApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -26,9 +48,15 @@ impl TemplateApp {
             .expect("WGPU enabled");
 
         let device = wgpu_render_state.device.as_ref();
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("vertex_shader"),
+            // convert u8 to u32
+            source: wgpu::ShaderSource::SpirV(convert_u8_to_u32(include_bytes!("shader.vert.spv")).into()),
+        });
+        let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("fragment_shader"),
+            // convert u8 to u32
+            source: wgpu::ShaderSource::SpirV(convert_u8_to_u32(include_bytes!("shader.frag.spv")).into()),
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("bind_group_layout"),
@@ -54,14 +82,14 @@ impl TemplateApp {
             label: Some("render_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
+                module: &vertex_shader,
+                entry_point: Some("main"),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
+                module: &fragment_shader,
+                entry_point: Some("main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu_render_state.target_format.into())],
             }),

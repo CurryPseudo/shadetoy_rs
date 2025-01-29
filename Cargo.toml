@@ -18,6 +18,7 @@ eframe = { version = "0.30", default-features = false, features = [
     "persistence", # Enable restoring app state when restarting the app.
     "wayland", # To support Linux (and CI)
 ] }
+wgpu = { version = "23.0.1", features = ["spirv"] }
 log = "0.4"
 
 # You only need serde if you want app persistence:
@@ -40,7 +41,11 @@ opt-level = 2 # fast and small wasm
 [profile.dev.package."*"]
 opt-level = 2
 
+[build-dependencies]
+shaderc = { version = "0.8", default-features = false }
 
+[package.metadata.shaderc]
+use_installed_libs = true
 [patch.crates-io]
 
 # If you want to use the bleeding edge version of egui and eframe:
