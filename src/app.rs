@@ -1,7 +1,4 @@
-// Note: The GLSL shaders (shader.vert and shader.frag) must be compiled to SPIR-V before use.
-// Use glslangValidator or a similar tool to compile them:
-// glslangValidator -V shader.vert -o shader.vert.spv
-// glslangValidator -V shader.frag -o shader.frag.spv
+use naga::valid::{Capabilities, ValidationFlags, Validator};
 
 use eframe::egui;
 use eframe::egui_wgpu;
@@ -12,6 +9,7 @@ use egui::Id;
 use egui_wgpu::wgpu;
 use egui_wgpu::wgpu::{CommandBuffer, CommandEncoder, Device, Queue, RenderPass};
 use egui_wgpu::{CallbackResources, ScreenDescriptor};
+use std::fs;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize, Default)]
@@ -21,23 +19,32 @@ pub struct TemplateApp {
     wgpu_callback: WgpuCallback,
 }
 
-#[allow(dead_code)]
-fn convert_u8_to_u32(input: &[u8]) -> Vec<u32> {
-    // 确保输入长度是 4 的倍数
-    assert!(input.len() % 4 == 0, "Input length must be a multiple of 4");
+fn convert_shader(
+    source_path: &str,
+    stage: naga::ShaderStage,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let source = fs::read_to_string(source_path)?;
+    let mut parser = naga::front::glsl::Frontend::default();
+    let module = parser.parse(
+        &naga::front::glsl::Options {
+            stage,
+            defines: Default::default(),
+        },
+        &source,
+    )?;
 
-    // 使用迭代器进行转换
-    (0..input.len() / 4)
-        .map(|i| {
-            // 将每四个 u8 转换为一个 u32
-            u32::from_le_bytes([
-                input[i * 4],
-                input[i * 4 + 1],
-                input[i * 4 + 2],
-                input[i * 4 + 3],
-            ])
-        })
-        .collect()
+    // Validate the module
+    let mut validator = Validator::new(ValidationFlags::all(), Capabilities::all());
+    let _info = validator.validate(&module)?;
+
+    // Convert to WGSL
+    let wgsl = naga::back::wgsl::write_string(
+        &module,
+        &_info,
+        naga::back::wgsl::WriterFlags::empty(),
+    )?;
+
+    Ok(wgsl)
 }
 impl TemplateApp {
     /// Called once before the first frame.
@@ -45,17 +52,19 @@ impl TemplateApp {
         let wgpu_render_state = cc.wgpu_render_state.as_ref().expect("WGPU enabled");
 
         let device = wgpu_render_state.device.as_ref();
+        let vertex_wgsl = convert_shader("src/shader.vert", naga::ShaderStage::Vertex).unwrap();
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("vertex_shader"),
             source: wgpu::ShaderSource::Wgsl(
-                include_str!("shader.vert.wgsl").into()
+                vertex_wgsl.into()
             ),
         });
+        let fragment_wgsl = convert_shader("src/shader.frag", naga::ShaderStage::Fragment).unwrap();
         let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("fragment_shader"),
             // convert u8 to u32
             source: wgpu::ShaderSource::Wgsl(
-                include_str!("shader.frag.wgsl").into()
+                fragment_wgsl.into()
             ),
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
