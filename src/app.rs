@@ -21,7 +21,6 @@ pub struct TemplateApp {
     wgpu_callback: WgpuCallback,
 }
 
-
 fn convert_u8_to_u32(input: &[u8]) -> Vec<u32> {
     // 确保输入长度是 4 的倍数
     assert!(input.len() % 4 == 0, "Input length must be a multiple of 4");
@@ -42,21 +41,22 @@ fn convert_u8_to_u32(input: &[u8]) -> Vec<u32> {
 impl TemplateApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let wgpu_render_state = cc
-            .wgpu_render_state
-            .as_ref()
-            .expect("WGPU enabled");
+        let wgpu_render_state = cc.wgpu_render_state.as_ref().expect("WGPU enabled");
 
         let device = wgpu_render_state.device.as_ref();
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("vertex_shader"),
             // convert u8 to u32
-            source: wgpu::ShaderSource::SpirV(convert_u8_to_u32(include_bytes!("shader.vert.spv")).into()),
+            source: wgpu::ShaderSource::SpirV(
+                convert_u8_to_u32(include_bytes!("shader.vert.spv")).into(),
+            ),
         });
         let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("fragment_shader"),
             // convert u8 to u32
-            source: wgpu::ShaderSource::SpirV(convert_u8_to_u32(include_bytes!("shader.frag.spv")).into()),
+            source: wgpu::ShaderSource::SpirV(
+                convert_u8_to_u32(include_bytes!("shader.frag.spv")).into(),
+            ),
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("bind_group_layout"),
@@ -219,7 +219,10 @@ impl eframe::App for TemplateApp {
             });
         });
         egui::SidePanel::new(Side::Left, Id::new("left_panel")).show(ctx, |ui| {
-            ui.add(egui::Slider::new(&mut self.wgpu_callback.angle, 0.0..=std::f32::consts::PI));
+            ui.add(egui::Slider::new(
+                &mut self.wgpu_callback.angle,
+                0.0..=std::f32::consts::PI,
+            ));
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {

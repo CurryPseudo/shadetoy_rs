@@ -19,10 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "main",
         None,
     )?;
-    fs::write(
-        "src/shader.vert.spv",
-        vert_spirv.as_binary_u8(),
-    )?;
+    fs::write("src/shader.vert.spv", vert_spirv.as_binary_u8())?;
 
     // Compile fragment shader
     let frag_source = fs::read_to_string("src/shader.frag")?;
@@ -33,11 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "main",
         None,
     )?;
-    fs::write(
-        "src/shader.frag.spv",
-        frag_spirv.as_binary_u8(),
-    )?;
+    fs::write("src/shader.frag.spv", frag_spirv.as_binary_u8())?;
 
     Ok(())
 }
-
