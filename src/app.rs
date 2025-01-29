@@ -46,16 +46,15 @@ impl TemplateApp {
         let device = wgpu_render_state.device.as_ref();
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("vertex_shader"),
-            // convert u8 to u32
-            source: wgpu::ShaderSource::SpirV(
-                convert_u8_to_u32(include_bytes!("shader.vert.spv")).into(),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("shader.vert.wgsl").into()
             ),
         });
         let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("fragment_shader"),
             // convert u8 to u32
-            source: wgpu::ShaderSource::SpirV(
-                convert_u8_to_u32(include_bytes!("shader.frag.spv")).into(),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("shader.frag.wgsl").into()
             ),
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

@@ -42,7 +42,7 @@ opt-level = 2 # fast and small wasm
 opt-level = 2
 
 [build-dependencies]
-shaderc = { version = "0.8", default-features = false }
+naga = { version = "24.0.0", features = ["glsl-in", "wgsl-out"] }
 
 [package.metadata.shaderc]
 use_installed_libs = true

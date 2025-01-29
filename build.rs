@@ -1,36 +1,44 @@
-use shaderc::{Compiler, ShaderKind};
+use naga::valid::{Capabilities, ValidationFlags, Validator};
 use std::fs;
 
-// only run in non-wasm build
-#[cfg(not(target_arch = "wasm32"))]
+fn convert_shader(
+    source_path: &str,
+    stage: naga::ShaderStage,
+) -> Result<String, Box<dyn std::error::Error>> {
+    println!("cargo:rerun-if-changed={}", source_path);
+    let source = fs::read_to_string(source_path)?;
+    let mut parser = naga::front::glsl::Frontend::default();
+    let module = parser.parse(
+        &naga::front::glsl::Options {
+            stage,
+            defines: Default::default(),
+        },
+        &source,
+    )?;
+
+    // Validate the module
+    let mut validator = Validator::new(ValidationFlags::all(), Capabilities::all());
+    let info = validator.validate(&module)?;
+    let info = validator.validate(&module)?;
+
+    // Convert to WGSL
+    let wgsl = naga::back::wgsl::write_string(
+        &module,
+        &info,
+        naga::back::wgsl::WriterFlags::empty(),
+    )?;
+
+    Ok(wgsl)
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Tell cargo to rerun if shaders change
-    println!("cargo:rerun-if-changed=src/shader.vert");
-    println!("cargo:rerun-if-changed=src/shader.frag");
+    // Convert vertex shader
+    let vert_wgsl = convert_shader("src/shader.vert", naga::ShaderStage::Vertex)?;
+    fs::write("src/shader.vert.wgsl", vert_wgsl)?;
 
-    let compiler = Compiler::new().ok_or("Failed to create shader compiler")?;
-
-    // Compile vertex shader
-    let vert_source = fs::read_to_string("src/shader.vert")?;
-    let vert_spirv = compiler.compile_into_spirv(
-        &vert_source,
-        ShaderKind::Vertex,
-        "shader.vert",
-        "main",
-        None,
-    )?;
-    fs::write("src/shader.vert.spv", vert_spirv.as_binary_u8())?;
-
-    // Compile fragment shader
-    let frag_source = fs::read_to_string("src/shader.frag")?;
-    let frag_spirv = compiler.compile_into_spirv(
-        &frag_source,
-        ShaderKind::Fragment,
-        "shader.frag",
-        "main",
-        None,
-    )?;
-    fs::write("src/shader.frag.spv", frag_spirv.as_binary_u8())?;
+    // Convert fragment shader
+    let frag_wgsl = convert_shader("src/shader.frag", naga::ShaderStage::Fragment)?;
+    fs::write("src/shader.frag.wgsl", frag_wgsl)?;
 
     Ok(())
 }
