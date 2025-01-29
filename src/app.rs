@@ -9,7 +9,6 @@ use egui::Id;
 use egui_wgpu::wgpu;
 use egui_wgpu::wgpu::{CommandBuffer, CommandEncoder, Device, Queue, RenderPass};
 use egui_wgpu::{CallbackResources, ScreenDescriptor};
-use std::fs;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize, Default)]
@@ -20,10 +19,9 @@ pub struct TemplateApp {
 }
 
 fn convert_shader(
-    source_path: &str,
+    source: &str,
     stage: naga::ShaderStage,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let source = fs::read_to_string(source_path)?;
     let mut parser = naga::front::glsl::Frontend::default();
     let module = parser.parse(
         &naga::front::glsl::Options {
@@ -52,14 +50,14 @@ impl TemplateApp {
         let wgpu_render_state = cc.wgpu_render_state.as_ref().expect("WGPU enabled");
 
         let device = wgpu_render_state.device.as_ref();
-        let vertex_wgsl = convert_shader("src/shader.vert", naga::ShaderStage::Vertex).unwrap();
+        let vertex_wgsl = convert_shader(include_str!("shader.vert"), naga::ShaderStage::Vertex).unwrap();
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("vertex_shader"),
             source: wgpu::ShaderSource::Wgsl(
                 vertex_wgsl.into()
             ),
         });
-        let fragment_wgsl = convert_shader("src/shader.frag", naga::ShaderStage::Fragment).unwrap();
+        let fragment_wgsl = convert_shader(include_str!("shader.frag"), naga::ShaderStage::Fragment).unwrap();
         let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("fragment_shader"),
             // convert u8 to u32
