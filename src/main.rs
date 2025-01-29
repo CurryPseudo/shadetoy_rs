@@ -27,8 +27,8 @@ fn main() -> eframe::Result {
 // When compiling to web using trunk:
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    use std::panic;
     use eframe::wasm_bindgen::JsCast as _;
+    use std::panic;
     panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     // Redirect `log` message to `console.log` and friends:

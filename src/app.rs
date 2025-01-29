@@ -36,11 +36,8 @@ fn convert_shader(
     let _info = validator.validate(&module)?;
 
     // Convert to WGSL
-    let wgsl = naga::back::wgsl::write_string(
-        &module,
-        &_info,
-        naga::back::wgsl::WriterFlags::empty(),
-    )?;
+    let wgsl =
+        naga::back::wgsl::write_string(&module, &_info, naga::back::wgsl::WriterFlags::empty())?;
 
     Ok(wgsl)
 }
@@ -50,20 +47,18 @@ impl TemplateApp {
         let wgpu_render_state = cc.wgpu_render_state.as_ref().expect("WGPU enabled");
 
         let device = wgpu_render_state.device.as_ref();
-        let vertex_wgsl = convert_shader(include_str!("shader.vert"), naga::ShaderStage::Vertex).unwrap();
+        let vertex_wgsl =
+            convert_shader(include_str!("shader.vert"), naga::ShaderStage::Vertex).unwrap();
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("vertex_shader"),
-            source: wgpu::ShaderSource::Wgsl(
-                vertex_wgsl.into()
-            ),
+            source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
         });
-        let fragment_wgsl = convert_shader(include_str!("shader.frag"), naga::ShaderStage::Fragment).unwrap();
+        let fragment_wgsl =
+            convert_shader(include_str!("shader.frag"), naga::ShaderStage::Fragment).unwrap();
         let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("fragment_shader"),
             // convert u8 to u32
-            source: wgpu::ShaderSource::Wgsl(
-                fragment_wgsl.into()
-            ),
+            source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
         });
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("bind_group_layout"),
