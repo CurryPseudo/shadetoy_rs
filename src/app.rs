@@ -15,7 +15,7 @@ use std::borrow::Cow;
 mod shader;
 pub use shader::*;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+pub(crate) type Result<T> = anyhow::Result<T>;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 pub struct TemplateApp {
@@ -136,7 +136,7 @@ impl TemplateApp {
                     notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
                 vertex_shader_file_watcher
                     .watch(
-                        std::path::Path::new("app/shader.vert"),
+                        std::path::Path::new("src/app/shader.vert"),
                         notify::RecursiveMode::NonRecursive,
                     )
                     .unwrap();
@@ -150,7 +150,7 @@ impl TemplateApp {
                     notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
                 fragment_shader_file_watcher
                     .watch(
-                        std::path::Path::new("app/shader.frag"),
+                        std::path::Path::new("src/app/shader.frag"),
                         notify::RecursiveMode::NonRecursive,
                     )
                     .unwrap();

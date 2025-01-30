@@ -1,0 +1,6 @@
+error: Unknown variable: vcolor
+  ┌─ glsl:7:15
+  │
+7 │     f_color = vcolor;
+  │               ^^^^^^
+
