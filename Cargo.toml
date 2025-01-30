@@ -25,12 +25,11 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 bytemuck = "1.21.0"
 naga = { version = "24.0.0", features = ["glsl-in", "wgsl-out"] }
+egui_logger = "0.6.2"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-env_logger = "0.11"
 notify = "8.0.0"
-notify-debouncer-full = "0.5.0"
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]

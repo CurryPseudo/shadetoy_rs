@@ -10,6 +10,7 @@ use egui::Id;
 use egui_wgpu::wgpu;
 use egui_wgpu::wgpu::{CommandBuffer, CommandEncoder, Device, Queue, RenderPass};
 use egui_wgpu::{CallbackResources, ScreenDescriptor};
+use log::{error, info};
 #[cfg(not(target_arch = "wasm32"))]
 use notify::Watcher;
 use std::borrow::Cow;
@@ -133,6 +134,7 @@ fn create_pipeline(
 impl TemplateApp {
     /// Called once before the first frame.
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        egui_logger::builder().init().unwrap();
         let render_state = cc.wgpu_render_state.as_ref().expect("WGPU enabled");
 
         let device = render_state.device.as_ref();
@@ -206,6 +208,7 @@ impl TemplateApp {
             Self {
                 wgpu_callback: WgpuCallback::default(),
                 render_state: render_state.clone(),
+                shader_dirty: true,
             }
         }
     }
@@ -282,7 +285,7 @@ impl eframe::App for TemplateApp {
                     ..
                 })) = self.vertex_shader_file_watch_rx.try_recv()
                 {
-                    eprintln!("Vertex shader file modified");
+                    info!("Vertex shader file modified");
                     self.shader_dirty = true;
                     while let Ok(Ok(_)) = self.vertex_shader_file_watch_rx.try_recv() {}
                 }
@@ -292,7 +295,7 @@ impl eframe::App for TemplateApp {
                     ..
                 })) = self.fragment_shader_file_watch_rx.try_recv()
                 {
-                    eprintln!("Fragment shader file modified");
+                    info!("Vertex shader file modified");
                     self.shader_dirty = true;
                     while let Ok(Ok(_)) = self.fragment_shader_file_watch_rx.try_recv() {}
                 }
@@ -306,12 +309,13 @@ impl eframe::App for TemplateApp {
                             fragment_wgsl,
                             self.render_state.target_format,
                         ));
+                        info!("Shader reloaded successfully");
                     }
                     (Err(vertex_error), _) => {
-                        eprintln!("Error loading vertex shader: {}", vertex_error);
+                        error!("Error loading vertex shader: {}", vertex_error);
                     }
                     (_, Err(fragment_error)) => {
-                        eprintln!("Error loading fragment shader: {}", fragment_error);
+                        error!("Error loading fragment shader: {}", fragment_error);
                     }
                 }
                 self.shader_dirty = false;
@@ -338,11 +342,12 @@ impl eframe::App for TemplateApp {
                 //egui::widgets::global_theme_preference_buttons(ui);
             });
         });
-        egui::SidePanel::new(Side::Left, Id::new("left_panel")).show(ctx, |ui| {
+        egui::SidePanel::new(Side::Right, Id::new("right_panel")).show(ctx, |ui| {
             ui.add(egui::Slider::new(
                 &mut self.wgpu_callback.angle,
                 0.0..=std::f32::consts::PI,
             ));
+            egui_logger::logger_ui().show(ui);
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
