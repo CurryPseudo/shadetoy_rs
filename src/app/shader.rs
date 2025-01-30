@@ -20,7 +20,6 @@ pub fn convert_shader(source: &str, stage: naga::ShaderStage) -> crate::app::Res
     let _info = validator
         .validate(&module)
         .map_err(|err| anyhow!("{}", err.emit_to_string(source)))?;
-
     // Convert to WGSL
     let wgsl =
         naga::back::wgsl::write_string(&module, &_info, naga::back::wgsl::WriterFlags::empty())?;
@@ -28,21 +27,29 @@ pub fn convert_shader(source: &str, stage: naga::ShaderStage) -> crate::app::Res
     Ok(wgsl)
 }
 macro_rules! load_shader {
-    ($path:literal, $stage:expr) => {
-        Ok(Cow::<'static, str>::from(if cfg!(target_arch = "wasm32") {
-            convert_shader(include_str!($path), $stage)?
+    ($path:literal) => {
+        if cfg!(target_arch = "wasm32") {
+            include_str!($path).to_string()
         } else {
             let path = format!("src/app/{}", $path);
-            convert_shader(&std::fs::read_to_string(&Path::new(&path))?, $stage)?
-        }))
+            std::fs::read_to_string(&Path::new(&path))?
+        }
     };
 }
 
 pub fn load_vertex_shader() -> crate::app::Result<Cow<'static, str>> {
-    load_shader!("shader.vert", naga::ShaderStage::Vertex)
+    Ok(convert_shader(&load_shader!("shader.vert"), naga::ShaderStage::Vertex)?.into())
 }
-pub fn load_fragment_shader() -> crate::app::Result<Cow<'static, str>> {
-    load_shader!("shader.frag", naga::ShaderStage::Fragment)
+pub fn load_fragment_shader(content: &str) -> crate::app::Result<Cow<'static, str>> {
+    let template = load_shader!("shader.frag");
+    let map = [("content".to_string(), content.to_string())]
+        .into_iter()
+        .collect::<std::collections::HashMap<String, String>>();
+    convert_shader(
+        &strfmt::strfmt(template.as_str(), &map)?,
+        naga::ShaderStage::Fragment,
+    )
+    .map(Cow::from)
 }
 
 #[test]

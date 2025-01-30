@@ -164,7 +164,7 @@ impl TemplateApp {
                 shader_dirty: true,
                 show_logger: false,
                 shader_editor: true,
-                shader_content: include_str!("app/shader_template.glsl").to_string(),
+                shader_content: include_str!("app/default.glsl").to_string(),
                 _vertex_shader_file_watcher: vertex_shader_file_watcher,
                 vertex_shader_file_watch_rx,
                 _fragment_shader_file_watcher: fragment_shader_file_watcher,
@@ -179,7 +179,7 @@ impl TemplateApp {
                 shader_dirty: true,
                 show_logger: false,
                 shader_editor: true,
-                shader_content: include_str!("app/shader_template.glsl").to_string(),
+                shader_content: include_str!("app/default.glsl").to_string(),
             }
         }
     }
@@ -272,7 +272,10 @@ impl eframe::App for TemplateApp {
                 }
             }
             if self.shader_dirty {
-                match (load_vertex_shader(), load_fragment_shader()) {
+                match (
+                    load_vertex_shader(),
+                    load_fragment_shader(&self.shader_content),
+                ) {
                     (Ok(vertex_wgsl), Ok(fragment_wgsl)) => {
                         triangle_render_resources.pipeline = Some(create_pipeline(
                             &self.render_state.device,
@@ -286,7 +289,7 @@ impl eframe::App for TemplateApp {
                         error!("Error loading vertex shader: {}", vertex_error);
                     }
                     (_, Err(fragment_error)) => {
-                        error!("Error loading fragment shader: {}", fragment_error);
+                        error!("Error loading fragment shader: {}", fragment_error,);
                     }
                 }
                 self.shader_dirty = false;
@@ -328,14 +331,19 @@ impl eframe::App for TemplateApp {
                     layout_job.wrap.max_width = wrap_width;
                     ui.fonts(|f| f.layout_job(layout_job))
                 };
-                ui.add(
-                    egui::TextEdit::multiline(&mut self.shader_content)
-                        .font(egui::TextStyle::Monospace)
-                        .code_editor()
-                        .lock_focus(true)
-                        .desired_width(f32::INFINITY)
-                        .layouter(&mut layouter),
-                );
+                if ui
+                    .add(
+                        egui::TextEdit::multiline(&mut self.shader_content)
+                            .font(egui::TextStyle::Monospace)
+                            .code_editor()
+                            .lock_focus(true)
+                            .desired_width(f32::INFINITY)
+                            .layouter(&mut layouter),
+                    )
+                    .changed()
+                {
+                    self.shader_dirty = true;
+                }
             }
             if ui
                 .button("Toggle Logger")
