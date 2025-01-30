@@ -1,4 +1,3 @@
-
 use eframe::egui;
 use eframe::egui_wgpu;
 use eframe::egui_wgpu::RenderState;
@@ -13,7 +12,6 @@ use log::{error, info};
 #[cfg(not(target_arch = "wasm32"))]
 use notify::Watcher;
 use std::borrow::Cow;
-use std::path::Path;
 mod shader;
 pub use shader::*;
 
@@ -138,7 +136,7 @@ impl TemplateApp {
                     notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
                 vertex_shader_file_watcher
                     .watch(
-                        Path::new("app/shader.vert"),
+                        std::path::Path::new("app/shader.vert"),
                         notify::RecursiveMode::NonRecursive,
                     )
                     .unwrap();
@@ -152,7 +150,7 @@ impl TemplateApp {
                     notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
                 fragment_shader_file_watcher
                     .watch(
-                        Path::new("app/shader.frag"),
+                        std::path::Path::new("app/shader.frag"),
                         notify::RecursiveMode::NonRecursive,
                     )
                     .unwrap();

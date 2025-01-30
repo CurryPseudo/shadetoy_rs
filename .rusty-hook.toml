@@ -1,5 +1,5 @@
 [hooks]
-pre-commit = "cargo clippy -- -D warnings && cargo fmt -- --check && trunk build"
+pre-commit = "cargo clippy -- -D warnings && cargo fmt -- --check && cargo clippy --target wasm32-unknown-unknown -- -D warnings"
 
 [logging]
 verbose = true
