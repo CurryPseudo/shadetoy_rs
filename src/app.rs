@@ -39,7 +39,7 @@ fn convert_shader(source: &str, stage: naga::ShaderStage) -> Result<String> {
             stage,
             defines: Default::default(),
         },
-        &source,
+        source,
     )?;
 
     // Validate the module
@@ -94,12 +94,12 @@ fn create_pipeline(
     let bind_group_layout = create_bind_group_layout(device);
     let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("vertex_shader"),
-        source: wgpu::ShaderSource::Wgsl(vertex_wgsl.into()),
+        source: wgpu::ShaderSource::Wgsl(vertex_wgsl),
     });
     let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("fragment_shader"),
         // convert u8 to u32
-        source: wgpu::ShaderSource::Wgsl(fragment_wgsl.into()),
+        source: wgpu::ShaderSource::Wgsl(fragment_wgsl),
     });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -257,7 +257,7 @@ impl egui_wgpu::CallbackTrait for WgpuCallback {
     ) {
         let resources: &TriangleRenderResources = callback_resources.get().unwrap();
         if let Some(pipeline) = &resources.pipeline {
-            render_pass.set_pipeline(&pipeline);
+            render_pass.set_pipeline(pipeline);
             render_pass.set_bind_group(0, &resources.bind_group, &[]);
             render_pass.draw(0..3, 0..1);
         }
