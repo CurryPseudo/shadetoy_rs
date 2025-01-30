@@ -50,6 +50,9 @@ opt-level = 2
 use_installed_libs = true
 [patch.crates-io]
 
+[dev-dependencies]
+rusty-hook = "0.11.2"
+
 # If you want to use the bleeding edge version of egui and eframe:
 # egui = { git = "https://github.com/emilk/egui", branch = "master" }
 # eframe = { git = "https://github.com/emilk/egui", branch = "master" }

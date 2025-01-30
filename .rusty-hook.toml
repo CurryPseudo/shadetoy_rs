@@ -1,0 +1,5 @@
+[hooks]
+pre-commit = "cargo clippy -- -D warnings && cargo fmt -- --check && trunk build"
+
+[logging]
+verbose = true

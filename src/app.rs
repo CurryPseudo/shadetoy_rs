@@ -366,7 +366,15 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // allocate rect as big as possible
-            let rect = ui.available_rect_before_wrap();
+            let mut rect = ui.available_rect_before_wrap();
+            let aspect = 4.0 / 3.0;
+            let (width, height) = if rect.width() / rect.height() > aspect {
+                (rect.height() * aspect, rect.height())
+            } else {
+                (rect.width(), rect.width() / aspect)
+            };
+            rect.set_width(width);
+            rect.set_height(height);
             ui.painter().add(egui_wgpu::Callback::new_paint_callback(
                 rect,
                 self.wgpu_callback.clone(),
