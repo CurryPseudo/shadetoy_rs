@@ -1,4 +1,3 @@
-use naga::valid::{Capabilities, ValidationFlags, Validator};
 
 use eframe::egui;
 use eframe::egui_wgpu;
@@ -15,6 +14,8 @@ use log::{error, info};
 use notify::Watcher;
 use std::borrow::Cow;
 use std::path::Path;
+mod shader;
+pub use shader::*;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -34,26 +35,6 @@ pub struct TemplateApp {
     fragment_shader_file_watch_rx: std::sync::mpsc::Receiver<notify::Result<notify::Event>>,
 }
 
-fn convert_shader(source: &str, stage: naga::ShaderStage) -> Result<String> {
-    let mut parser = naga::front::glsl::Frontend::default();
-    let module = parser.parse(
-        &naga::front::glsl::Options {
-            stage,
-            defines: Default::default(),
-        },
-        source,
-    )?;
-
-    // Validate the module
-    let mut validator = Validator::new(ValidationFlags::all(), Capabilities::all());
-    let _info = validator.validate(&module)?;
-
-    // Convert to WGSL
-    let wgsl =
-        naga::back::wgsl::write_string(&module, &_info, naga::back::wgsl::WriterFlags::empty())?;
-
-    Ok(wgsl)
-}
 fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("bind_group_layout"),
@@ -70,23 +51,6 @@ fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     })
 }
 
-macro_rules! load_shader {
-    ($path:literal, $stage:expr) => {
-        Ok(Cow::<'static, str>::from(if cfg!(target_arch = "wasm32") {
-            convert_shader(include_str!($path), $stage)?
-        } else {
-            let path = format!("src/{}", $path);
-            convert_shader(&std::fs::read_to_string(&Path::new(&path))?, $stage)?
-        }))
-    };
-}
-
-fn load_vertex_shader() -> Result<Cow<'static, str>> {
-    load_shader!("shader.vert", naga::ShaderStage::Vertex)
-}
-fn load_fragment_shader() -> Result<Cow<'static, str>> {
-    load_shader!("shader.frag", naga::ShaderStage::Fragment)
-}
 fn create_pipeline(
     device: &wgpu::Device,
     vertex_wgsl: Cow<'_, str>,
@@ -174,7 +138,7 @@ impl TemplateApp {
                     notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
                 vertex_shader_file_watcher
                     .watch(
-                        Path::new("src/shader.vert"),
+                        Path::new("app/shader.vert"),
                         notify::RecursiveMode::NonRecursive,
                     )
                     .unwrap();
@@ -188,7 +152,7 @@ impl TemplateApp {
                     notify::RecommendedWatcher::new(tx, notify::Config::default()).unwrap();
                 fragment_shader_file_watcher
                     .watch(
-                        Path::new("src/shader.frag"),
+                        Path::new("app/shader.frag"),
                         notify::RecursiveMode::NonRecursive,
                     )
                     .unwrap();
