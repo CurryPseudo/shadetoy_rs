@@ -15,10 +15,13 @@ use notify::Watcher;
 use std::borrow::Cow;
 use std::path::Path;
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 pub struct TemplateApp {
     wgpu_callback: WgpuCallback,
     render_state: RenderState,
+    shader_dirty: bool,
     #[cfg(not(target_arch = "wasm32"))]
     _vertex_shader_file_watcher: notify::RecommendedWatcher,
     #[cfg(not(target_arch = "wasm32"))]
@@ -29,10 +32,7 @@ pub struct TemplateApp {
     fragment_shader_file_watch_rx: std::sync::mpsc::Receiver<notify::Result<notify::Event>>,
 }
 
-fn convert_shader(
-    source: &str,
-    stage: naga::ShaderStage,
-) -> Result<String, Box<dyn std::error::Error>> {
+fn convert_shader(source: &str, stage: naga::ShaderStage) -> Result<String> {
     let mut parser = naga::front::glsl::Frontend::default();
     let module = parser.parse(
         &naga::front::glsl::Options {
@@ -67,33 +67,23 @@ fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         }],
     })
 }
-fn load_vertex_shader() -> Cow<'static, str> {
-    if cfg!(target_arch = "wasm32") {
-        convert_shader(include_str!("shader.vert"), naga::ShaderStage::Vertex)
-            .unwrap()
-            .into()
-    } else {
-        convert_shader(
-            &std::fs::read_to_string(&Path::new("src/shader.vert")).unwrap(),
-            naga::ShaderStage::Vertex,
-        )
-        .unwrap()
-        .into()
-    }
+
+macro_rules! load_shader {
+    ($path:literal, $stage:expr) => {
+        Ok(Cow::<'static, str>::from(if cfg!(target_arch = "wasm32") {
+            convert_shader(include_str!($path), $stage)?
+        } else {
+            let path = format!("src/{}", $path);
+            convert_shader(&std::fs::read_to_string(&Path::new(&path))?, $stage)?
+        }))
+    };
 }
-fn load_fragment_shader() -> Cow<'static, str> {
-    if cfg!(target_arch = "wasm32") {
-        convert_shader(include_str!("shader.frag"), naga::ShaderStage::Fragment)
-            .unwrap()
-            .into()
-    } else {
-        convert_shader(
-            &std::fs::read_to_string(&Path::new("src/shader.frag")).unwrap(),
-            naga::ShaderStage::Fragment,
-        )
-        .unwrap()
-        .into()
-    }
+
+fn load_vertex_shader() -> Result<Cow<'static, str>> {
+    load_shader!("shader.vert", naga::ShaderStage::Vertex)
+}
+fn load_fragment_shader() -> Result<Cow<'static, str>> {
+    load_shader!("shader.frag", naga::ShaderStage::Fragment)
 }
 fn create_pipeline(
     device: &wgpu::Device,
@@ -204,6 +194,7 @@ impl TemplateApp {
             Self {
                 wgpu_callback: WgpuCallback::default(),
                 render_state: render_state.clone(),
+                shader_dirty: true,
                 _vertex_shader_file_watcher: vertex_shader_file_watcher,
                 vertex_shader_file_watch_rx,
                 _fragment_shader_file_watcher: fragment_shader_file_watcher,
@@ -276,6 +267,7 @@ impl egui_wgpu::CallbackTrait for WgpuCallback {
 impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.request_repaint();
         {
             let mut renderer = self.render_state.renderer.write();
 
@@ -285,29 +277,44 @@ impl eframe::App for TemplateApp {
                 .unwrap();
             #[cfg(not(target_arch = "wasm32"))]
             {
-                while let Ok(Ok(notify::Event {
-                    kind: notify::EventKind::Modify(_),
+                if let Ok(Ok(notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(_)),
                     ..
                 })) = self.vertex_shader_file_watch_rx.try_recv()
                 {
-                    triangle_render_resources.pipeline = None;
+                    eprintln!("Vertex shader file modified");
+                    self.shader_dirty = true;
+                    while let Ok(Ok(_)) = self.vertex_shader_file_watch_rx.try_recv() {}
                 }
 
-                while let Ok(Ok(notify::Event {
-                    kind: notify::EventKind::Modify(_),
+                if let Ok(Ok(notify::Event {
+                    kind: notify::EventKind::Modify(notify::event::ModifyKind::Data(_)),
                     ..
                 })) = self.fragment_shader_file_watch_rx.try_recv()
                 {
-                    triangle_render_resources.pipeline = None;
+                    eprintln!("Fragment shader file modified");
+                    self.shader_dirty = true;
+                    while let Ok(Ok(_)) = self.fragment_shader_file_watch_rx.try_recv() {}
                 }
             }
-            if triangle_render_resources.pipeline.is_none() {
-                triangle_render_resources.pipeline = Some(create_pipeline(
-                    &self.render_state.device,
-                    load_vertex_shader(),
-                    load_fragment_shader(),
-                    self.render_state.target_format,
-                ));
+            if self.shader_dirty {
+                match (load_vertex_shader(), load_fragment_shader()) {
+                    (Ok(vertex_wgsl), Ok(fragment_wgsl)) => {
+                        triangle_render_resources.pipeline = Some(create_pipeline(
+                            &self.render_state.device,
+                            vertex_wgsl,
+                            fragment_wgsl,
+                            self.render_state.target_format,
+                        ));
+                    }
+                    (Err(vertex_error), _) => {
+                        eprintln!("Error loading vertex shader: {}", vertex_error);
+                    }
+                    (_, Err(fragment_error)) => {
+                        eprintln!("Error loading fragment shader: {}", fragment_error);
+                    }
+                }
+                self.shader_dirty = false;
             }
         }
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
