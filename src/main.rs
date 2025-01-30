@@ -29,9 +29,6 @@ fn main() {
     use std::panic;
     panic::set_hook(Box::new(console_error_panic_hook::hook));
 
-    // Redirect `log` message to `console.log` and friends:
-    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
-
     let web_options = eframe::WebOptions::default();
 
     wasm_bindgen_futures::spawn_local(async {
