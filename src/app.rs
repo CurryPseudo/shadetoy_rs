@@ -23,6 +23,8 @@ pub struct TemplateApp {
     render_state: RenderState,
     shader_dirty: bool,
     show_logger: bool,
+    shader_editor: bool,
+    shader_content: String,
     #[cfg(not(target_arch = "wasm32"))]
     _vertex_shader_file_watcher: notify::RecommendedWatcher,
     #[cfg(not(target_arch = "wasm32"))]
@@ -38,7 +40,7 @@ fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
         label: Some("bind_group_layout"),
         entries: &[wgpu::BindGroupLayoutEntry {
             binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
+            visibility: wgpu::ShaderStages::FRAGMENT,
             ty: wgpu::BindingType::Buffer {
                 ty: wgpu::BufferBindingType::Uniform,
                 has_dynamic_offset: false,
@@ -104,7 +106,7 @@ impl TemplateApp {
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[0.0]),
+            contents: bytemuck::cast_slice(&[0.0, 0.0]),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
         });
         let bind_group_layout = create_bind_group_layout(device);
@@ -161,6 +163,8 @@ impl TemplateApp {
                 render_state: render_state.clone(),
                 shader_dirty: true,
                 show_logger: false,
+                shader_editor: true,
+                shader_content: include_str!("app/shader_template.glsl").to_string(),
                 _vertex_shader_file_watcher: vertex_shader_file_watcher,
                 vertex_shader_file_watch_rx,
                 _fragment_shader_file_watcher: fragment_shader_file_watcher,
@@ -174,6 +178,8 @@ impl TemplateApp {
                 render_state: render_state.clone(),
                 shader_dirty: true,
                 show_logger: false,
+                shader_editor: true,
+                shader_content: include_str!("app/shader_template.glsl").to_string(),
             }
         }
     }
@@ -186,7 +192,7 @@ struct TriangleRenderResources {
 }
 #[derive(Default, Clone)]
 struct WgpuCallback {
-    angle: f32,
+    resolution: [f32; 2],
 }
 
 impl egui_wgpu::CallbackTrait for WgpuCallback {
@@ -202,7 +208,7 @@ impl egui_wgpu::CallbackTrait for WgpuCallback {
         queue.write_buffer(
             &resources.uniform_buffer,
             0,
-            bytemuck::cast_slice(&[self.angle]),
+            bytemuck::cast_slice(&[self.resolution[0], self.resolution[1]]),
         );
         Vec::new()
     }
@@ -227,7 +233,7 @@ impl egui_wgpu::CallbackTrait for WgpuCallback {
         if let Some(pipeline) = &resources.pipeline {
             render_pass.set_pipeline(pipeline);
             render_pass.set_bind_group(0, &resources.bind_group, &[]);
-            render_pass.draw(0..3, 0..1);
+            render_pass.draw(0..6, 0..1);
         }
     }
 }
@@ -308,10 +314,29 @@ impl eframe::App for TemplateApp {
             });
         });
         egui::SidePanel::new(Side::Right, Id::new("right_panel")).show(ctx, |ui| {
-            ui.add(egui::Slider::new(
-                &mut self.wgpu_callback.angle,
-                0.0..=std::f32::consts::PI,
-            ));
+            ui.checkbox(&mut self.shader_editor, "Shader Editor");
+            if self.shader_editor {
+                let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
+                let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                    let mut layout_job = egui_extras::syntax_highlighting::highlight(
+                        ui.ctx(),
+                        ui.style(),
+                        &theme,
+                        string,
+                        "c",
+                    );
+                    layout_job.wrap.max_width = wrap_width;
+                    ui.fonts(|f| f.layout_job(layout_job))
+                };
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.shader_content)
+                        .font(egui::TextStyle::Monospace)
+                        .code_editor()
+                        .lock_focus(true)
+                        .desired_width(f32::INFINITY)
+                        .layouter(&mut layouter),
+                );
+            }
             if ui
                 .button("Toggle Logger")
                 .on_hover_ui(|ui| {
@@ -337,6 +362,7 @@ impl eframe::App for TemplateApp {
             };
             rect.set_width(width);
             rect.set_height(height);
+            self.wgpu_callback.resolution = [width, height];
             ui.painter().add(egui_wgpu::Callback::new_paint_callback(
                 rect,
                 self.wgpu_callback.clone(),
