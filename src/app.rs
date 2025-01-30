@@ -23,6 +23,7 @@ pub struct TemplateApp {
     wgpu_callback: WgpuCallback,
     render_state: RenderState,
     shader_dirty: bool,
+    show_logger: bool,
     #[cfg(not(target_arch = "wasm32"))]
     _vertex_shader_file_watcher: notify::RecommendedWatcher,
     #[cfg(not(target_arch = "wasm32"))]
@@ -197,6 +198,7 @@ impl TemplateApp {
                 wgpu_callback: WgpuCallback::default(),
                 render_state: render_state.clone(),
                 shader_dirty: true,
+                show_logger: false,
                 _vertex_shader_file_watcher: vertex_shader_file_watcher,
                 vertex_shader_file_watch_rx,
                 _fragment_shader_file_watcher: fragment_shader_file_watcher,
@@ -209,6 +211,7 @@ impl TemplateApp {
                 wgpu_callback: WgpuCallback::default(),
                 render_state: render_state.clone(),
                 shader_dirty: true,
+                show_logger: false,
             }
         }
     }
@@ -347,7 +350,18 @@ impl eframe::App for TemplateApp {
                 &mut self.wgpu_callback.angle,
                 0.0..=std::f32::consts::PI,
             ));
-            egui_logger::logger_ui().show(ui);
+            if ui
+                .button("Toggle Logger")
+                .on_hover_ui(|ui| {
+                    ui.label("Toggle the logger");
+                })
+                .clicked()
+            {
+                self.show_logger = !self.show_logger;
+            };
+            if self.show_logger {
+                egui_logger::logger_ui().show(ui);
+            }
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
