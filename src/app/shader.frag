@@ -2,6 +2,14 @@
 
 layout (binding = 0, std140) uniform Uniforms {{
     vec2 iResolution;
+    float iTime;
+    float iTimeDelta;
+    float iFrame;
+    vec4 iChannelTime;
+    vec4 iMouse;
+    vec4 iDate;
+    float iSampleRate;
+    vec3 iChannelResolution[4];
 }};
 
 layout (location = 0) out vec4 _f_color;

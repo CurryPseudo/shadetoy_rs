@@ -53,19 +53,19 @@ fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 
 fn create_pipeline(
     device: &wgpu::Device,
-    vertex_wgsl: Cow<'_, str>,
-    fragment_wgsl: Cow<'_, str>,
+    vertex_spirv: Cow<'_, [u32]>,
+    fragment_spirv: Cow<'_, [u32]>,
     target_format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
     let bind_group_layout = create_bind_group_layout(device);
     let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("vertex_shader"),
-        source: wgpu::ShaderSource::Wgsl(vertex_wgsl),
+        source: wgpu::ShaderSource::SpirV(vertex_spirv),
     });
     let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("fragment_shader"),
         // convert u8 to u32
-        source: wgpu::ShaderSource::Wgsl(fragment_wgsl),
+        source: wgpu::ShaderSource::SpirV(fragment_spirv),
     });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -106,7 +106,7 @@ impl TemplateApp {
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[0.0, 0.0]),
+            contents: bytemuck::cast_slice(&[0.0f32; 52]),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
         });
         let bind_group_layout = create_bind_group_layout(device);
@@ -162,7 +162,7 @@ impl TemplateApp {
                 wgpu_callback: WgpuCallback::default(),
                 render_state: render_state.clone(),
                 shader_dirty: true,
-                show_logger: false,
+                show_logger: true,
                 shader_editor: true,
                 shader_content: include_str!("app/default.glsl").to_string(),
                 _vertex_shader_file_watcher: vertex_shader_file_watcher,
@@ -177,8 +177,8 @@ impl TemplateApp {
                 wgpu_callback: WgpuCallback::default(),
                 render_state: render_state.clone(),
                 shader_dirty: true,
-                show_logger: false,
-                shader_editor: true,
+                show_logger: true,
+                shader_editor: false,
                 shader_content: include_str!("app/default.glsl").to_string(),
             }
         }
@@ -205,10 +205,13 @@ impl egui_wgpu::CallbackTrait for WgpuCallback {
         callback_resources: &mut CallbackResources,
     ) -> Vec<CommandBuffer> {
         let resources: &TriangleRenderResources = callback_resources.get().unwrap();
+        let mut buffer = [0.0f32; 26];
+        buffer[0] = self.resolution[0];
+        buffer[1] = self.resolution[1];
         queue.write_buffer(
             &resources.uniform_buffer,
             0,
-            bytemuck::cast_slice(&[self.resolution[0], self.resolution[1]]),
+            bytemuck::cast_slice(&buffer[..]),
         );
         Vec::new()
     }
@@ -276,11 +279,11 @@ impl eframe::App for TemplateApp {
                     load_vertex_shader(),
                     load_fragment_shader(&self.shader_content),
                 ) {
-                    (Ok(vertex_wgsl), Ok(fragment_wgsl)) => {
+                    (Ok(vertex_spirv), Ok(fragment_spirv)) => {
                         triangle_render_resources.pipeline = Some(create_pipeline(
                             &self.render_state.device,
-                            vertex_wgsl,
-                            fragment_wgsl,
+                            vertex_spirv,
+                            fragment_spirv,
                             self.render_state.target_format,
                         ));
                         info!("Shader reloaded successfully");
@@ -317,7 +320,11 @@ impl eframe::App for TemplateApp {
             });
         });
         egui::SidePanel::new(Side::Right, Id::new("right_panel")).show(ctx, |ui| {
-            ui.checkbox(&mut self.shader_editor, "Shader Editor");
+            ui.horizontal(|ui| {
+                #[cfg(not(target_arch = "wasm32"))]
+                ui.checkbox(&mut self.shader_editor, "Shader Editor");
+                ui.checkbox(&mut self.show_logger, "Log");
+            });
             if self.shader_editor {
                 let theme = egui_extras::syntax_highlighting::CodeTheme::from_style(ui.style());
                 let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
@@ -331,29 +338,27 @@ impl eframe::App for TemplateApp {
                     layout_job.wrap.max_width = wrap_width;
                     ui.fonts(|f| f.layout_job(layout_job))
                 };
-                if ui
-                    .add(
-                        egui::TextEdit::multiline(&mut self.shader_content)
-                            .font(egui::TextStyle::Monospace)
-                            .code_editor()
-                            .lock_focus(true)
-                            .desired_width(f32::INFINITY)
-                            .layouter(&mut layouter),
-                    )
-                    .changed()
-                {
-                    self.shader_dirty = true;
-                }
+                egui::ScrollArea::new(egui::Vec2b::new(true, true))
+                    .id_salt(Id::new("shader_editor_scroll_area"))
+                    .auto_shrink(egui::Vec2b::new(true, true))
+                    .max_height(ui.available_height() / 4.0 * 3.0)
+                    .show(ui, |ui| {
+                        if ui
+                            .add(
+                                egui::TextEdit::multiline(&mut self.shader_content)
+                                    .font(egui::TextStyle::Monospace)
+                                    .code_editor()
+                                    .lock_focus(true)
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(10)
+                                    .layouter(&mut layouter),
+                            )
+                            .changed()
+                        {
+                            self.shader_dirty = true;
+                        }
+                    });
             }
-            if ui
-                .button("Toggle Logger")
-                .on_hover_ui(|ui| {
-                    ui.label("Toggle the logger");
-                })
-                .clicked()
-            {
-                self.show_logger = !self.show_logger;
-            };
             if self.show_logger {
                 egui_logger::logger_ui().show(ui);
             }
@@ -361,15 +366,16 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // allocate rect as big as possible
-            let mut rect = ui.available_rect_before_wrap();
-            let aspect = 4.0 / 3.0;
-            let (width, height) = if rect.width() / rect.height() > aspect {
-                (rect.height() * aspect, rect.height())
-            } else {
-                (rect.width(), rect.width() / aspect)
-            };
-            rect.set_width(width);
-            rect.set_height(height);
+            let rect = ui.available_rect_before_wrap();
+            let (width, height) = (rect.width(), rect.height());
+            //let aspect = 4.0 / 3.0;
+            //let (width, height) = if rect.width() / rect.height() > aspect {
+            //    (rect.height() * aspect, rect.height())
+            //} else {
+            //    (rect.width(), rect.width() / aspect)
+            //};
+            //rect.set_width(width);
+            //rect.set_height(height);
             self.wgpu_callback.resolution = [width, height];
             ui.painter().add(egui_wgpu::Callback::new_paint_callback(
                 rect,

@@ -33,6 +33,7 @@ strfmt = "0.2.4"
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 notify = "8.0.0"
+shaderc = "0.8.3"
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -55,6 +56,11 @@ use_installed_libs = true
 
 [dev-dependencies]
 rusty-hook = "0.11.2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.build-dependencies]
+shaderc = "0.8.3"
+strfmt = "0.2.4"
+
 
 # If you want to use the bleeding edge version of egui and eframe:
 # egui = { git = "https://github.com/emilk/egui", branch = "master" }
