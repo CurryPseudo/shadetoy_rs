@@ -107,7 +107,7 @@ impl TemplateApp {
         egui_logger::builder().init().unwrap();
         let render_state = cc.wgpu_render_state.as_ref().expect("WGPU enabled");
 
-        let device = render_state.device.as_ref();
+        let device = &render_state.device;
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
