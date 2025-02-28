@@ -23,12 +23,14 @@ log = "0.4"
 
 # You only need serde if you want app persistence:
 serde = { version = "1", features = ["derive"] }
-bytemuck = "1.21.0"
+bytemuck = { version = "1.21.0", features = ["derive"] }
 naga = { version = "24.0.0", features = ["glsl-in", "wgsl-out"] }
 egui_logger = "0.6.2"
 anyhow = { version = "1.0.95", features = ["backtrace"] }
 egui_extras = { version = "0.30.0", features = ["syntect"] }
 strfmt = "0.2.4"
+std140 = "0.2.6"
+instant = "0.1.13"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

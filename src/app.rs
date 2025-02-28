@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(clippy::no_effect)]
 use eframe::egui;
 use eframe::egui_wgpu;
 use eframe::egui_wgpu::RenderState;
@@ -8,10 +10,12 @@ use egui::Id;
 use egui_wgpu::wgpu;
 use egui_wgpu::wgpu::{CommandBuffer, CommandEncoder, Device, Queue, RenderPass};
 use egui_wgpu::{CallbackResources, ScreenDescriptor};
+use instant::Instant;
 use log::{error, info};
 #[cfg(not(target_arch = "wasm32"))]
 use notify::Watcher;
 use std::borrow::Cow;
+
 mod shader;
 pub use shader::*;
 
@@ -25,6 +29,7 @@ pub struct TemplateApp {
     show_logger: bool,
     shader_editor: bool,
     shader_content: String,
+    start_time: Instant,
     #[cfg(not(target_arch = "wasm32"))]
     _vertex_shader_file_watcher: notify::RecommendedWatcher,
     #[cfg(not(target_arch = "wasm32"))]
@@ -106,7 +111,7 @@ impl TemplateApp {
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&[0.0f32; 52]),
+            contents: &[0u8; std::mem::size_of::<WgpuUniform>()],
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
         });
         let bind_group_layout = create_bind_group_layout(device);
@@ -165,6 +170,7 @@ impl TemplateApp {
                 show_logger: true,
                 shader_editor: true,
                 shader_content: include_str!("app/default.glsl").to_string(),
+                start_time: Instant::now(),
                 _vertex_shader_file_watcher: vertex_shader_file_watcher,
                 vertex_shader_file_watch_rx,
                 _fragment_shader_file_watcher: fragment_shader_file_watcher,
@@ -179,6 +185,7 @@ impl TemplateApp {
                 shader_dirty: true,
                 show_logger: true,
                 shader_editor: false,
+                start_time: Instant::now(),
                 shader_content: include_str!("app/default.glsl").to_string(),
             }
         }
@@ -192,7 +199,33 @@ struct TriangleRenderResources {
 }
 #[derive(Default, Clone)]
 struct WgpuCallback {
-    resolution: [f32; 2],
+    uniform: WgpuUniform,
+}
+#[derive(Clone)]
+#[std140::repr_std140]
+struct WgpuUniform {
+    resolution: std140::vec2,
+    time: std140::float,
+    time_delta: std140::float,
+    frame: std140::float,
+    channel_time: std140::vec4,
+    mouse: std140::vec4,
+    date: std140::vec4,
+    sample_rate: std140::float,
+}
+impl Default for WgpuUniform {
+    fn default() -> Self {
+        Self {
+            resolution: std140::vec2::zero(),
+            time: std140::float(0.0),
+            time_delta: std140::float(0.0),
+            frame: std140::float(0.0),
+            channel_time: std140::vec4::zero(),
+            mouse: std140::vec4::zero(),
+            date: std140::vec4::zero(),
+            sample_rate: std140::float(0.0),
+        }
+    }
 }
 
 impl egui_wgpu::CallbackTrait for WgpuCallback {
@@ -205,14 +238,12 @@ impl egui_wgpu::CallbackTrait for WgpuCallback {
         callback_resources: &mut CallbackResources,
     ) -> Vec<CommandBuffer> {
         let resources: &TriangleRenderResources = callback_resources.get().unwrap();
-        let mut buffer = [0.0f32; 26];
-        buffer[0] = self.resolution[0];
-        buffer[1] = self.resolution[1];
-        queue.write_buffer(
-            &resources.uniform_buffer,
-            0,
-            bytemuck::cast_slice(&buffer[..]),
-        );
+        queue.write_buffer(&resources.uniform_buffer, 0, unsafe {
+            std::slice::from_raw_parts(
+                &self.uniform as *const WgpuUniform as *const u8,
+                std::mem::size_of::<WgpuUniform>(),
+            )
+        });
         Vec::new()
     }
 
@@ -321,6 +352,12 @@ impl eframe::App for TemplateApp {
         });
         egui::SidePanel::new(Side::Right, Id::new("right_panel")).show(ctx, |ui| {
             ui.horizontal(|ui| {
+                if ui.button("🔄").clicked() {
+                    self.wgpu_callback.uniform.frame = std140::float(0.0);
+                    self.start_time = Instant::now();
+                }
+            });
+            ui.horizontal(|ui| {
                 #[cfg(not(target_arch = "wasm32"))]
                 ui.checkbox(&mut self.shader_editor, "Shader Editor");
                 ui.checkbox(&mut self.show_logger, "Log");
@@ -376,11 +413,18 @@ impl eframe::App for TemplateApp {
             //};
             //rect.set_width(width);
             //rect.set_height(height);
-            self.wgpu_callback.resolution = [width, height];
+            self.wgpu_callback.uniform.resolution = std140::vec2(
+                width * ctx.pixels_per_point(),
+                height * ctx.pixels_per_point(),
+            );
+            self.wgpu_callback.uniform.time =
+                std140::float(Instant::now().duration_since(self.start_time).as_secs_f32());
             ui.painter().add(egui_wgpu::Callback::new_paint_callback(
                 rect,
                 self.wgpu_callback.clone(),
             ));
+            self.wgpu_callback.uniform.frame =
+                std140::float(self.wgpu_callback.uniform.frame.0 + 1.0);
         });
     }
 
